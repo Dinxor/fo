@@ -1,11 +1,13 @@
 ﻿import os
+import io
 from random import randint
 
 import asyncio
 import uvicorn
 import aiofiles
-from fastapi import FastAPI, File, UploadFile, Query
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi import FastAPI, Request, File, UploadFile, Query, HTTPException
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+import qrcode
 
 from db import DataBase
 db = DataBase()
@@ -18,6 +20,11 @@ u_page  ='''<!DOCTYPE html>
     <title>Управление файлами</title>
 </head>
 <body>
+    <a href="qr" 
+        target="popup" 
+        onclick="window.open('./qr','popup','width=600,height=600'); return false;">
+        Показать QR
+    </a>
     <h2>Загрузка файла</h2>
     <form action="/fo" method="post" enctype="multipart/form-data">
         <!-- File input field -->
@@ -45,10 +52,20 @@ done_page  ='''<!DOCTYPE html>
     <title>Файл загружен</title>
 </head>
 <body>
-    <a href="../fo">На главную</a><br>
+    <a href="../fo">На главную</a>
+    <a href="qr" 
+        target="popup" 
+        onclick="window.open('./qr','popup','width=600,height=600'); return false;">
+        Показать QR
+    </a><br>
     <h2>Загрузка файла завершена</h2>
-    Код для скачивания файла {fileid}, также файл доступен для скачивания по ссылке<br>
+    Код для скачивания файла {fileid}, также файл доступен по ссылке<br>
     <a href="../fo?file={fileid}"> Скачать файл {filename}</a>
+    <a href="qr" 
+        target="popup" 
+        onclick="window.open('./qr?file={fileid}','popup','width=600,height=600'); return false;">
+        Показать QR
+    </a><br>
 </body>
 </html>'''
 
@@ -59,7 +76,13 @@ nof_page  ='''<!DOCTYPE html>
     <title>Файл не найден</title>
 </head>
 <body>
-    <a href="../fo">На главную</a><br>
+    <a href="../fo">На главную</a>
+    <a href="qr" 
+        target="popup" 
+        onclick="window.open('./qr','popup','width=600,height=600'); return false;">
+        Показать QR
+    </a>
+    <br>
     <h2>Такого файла нет на сервере</h2>
 </body>
 </html>'''
@@ -108,6 +131,26 @@ async def upload(file: UploadFile = File(...)):
         return HTMLResponse(done_page.format(fileid = fileid, filename = file.filename))
     else:
         return HTMLResponse(u_page)
+
+
+@app.get('/qr')
+async def link_qr(request: Request):
+    try:
+        host = request.headers.get('host')
+        code = request.query_params.get('file', '')
+        if code:
+            url = f'http://{host}/fo?file={code}'
+        else:
+            url = f'http://{host}/fo'
+        print(host, code, url)
+        img = qrcode.make(url)
+        buf = io.BytesIO()
+        img.save(buf, format='png')
+        buf.seek(0)
+        return StreamingResponse(content=buf, media_type="image/png",
+                headers={'Content-Disposition': 'inline'})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 if __name__ == "__main__":
